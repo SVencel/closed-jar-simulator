@@ -1,0 +1,12 @@
+{
+  "name": "closed-jar-simulator",
+  "version": "3.3.0",
+  "description": "Mechanistic closed-jar ecosystem simulator (plants, soil life, water, gases, disease) with charts, parameter sweeps and a 3D cutaway view.",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "node serve.js",
+    "test": "node test/run.js"
+  },
+  "engines": { "node": ">=18" }
+}

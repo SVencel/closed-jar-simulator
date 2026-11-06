@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Closed Jar Simulator</title>
+<style>
+  :root {
+    --bg: #11151b; --panel: #181e27; --panel2: #1e2631; --line: #2a3442; --text: #e4e9f0; --muted: #8b97a8;
+    --grid: #263041; --band: rgba(120,200,140,0.07); --tip: rgba(10,14,20,0.92);
+    --accent: #5ec2a0; --good: #5ec27a; --ok: #7aa7d9; --warn: #e8b84a; --bad: #e5604d;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f3f5f8; --panel: #ffffff; --panel2: #eef1f5; --line: #d5dce5; --text: #1b2430; --muted: #66758a;
+      --grid: #e3e8ee; --band: rgba(60,160,90,0.08); --tip: rgba(255,255,255,0.95);
+      --accent: #1f9d78; --good: #2f9e55; --ok: #3a7bc0; --warn: #b9860f; --bad: #c8402e;
+      color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f5f8; --panel: #ffffff; --panel2: #eef1f5; --line: #d5dce5; --text: #1b2430; --muted: #66758a;
+    --grid: #e3e8ee; --band: rgba(60,160,90,0.08); --tip: rgba(255,255,255,0.95);
+    --accent: #1f9d78; --good: #2f9e55; --ok: #3a7bc0; --warn: #b9860f; --bad: #c8402e;
+    color-scheme: light;
+  }
+  /* side gutters: at least 16px, and clear of a phone's side system bar */
+  :root { --gl: max(16px, env(safe-area-inset-left, 0px)); --gr: max(16px, env(safe-area-inset-right, 0px)); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+  button, select, input { font: inherit; color: inherit; }
+  button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #07110d; border-color: var(--accent); font-weight: 600; }
+  button.small { padding: 1px 7px; font-size: 12px; }
+  select, input[type=number] { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  input[type=number] { width: 70px; }
+
+  header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px var(--gr) 8px var(--gl); background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 6px 0 0; font-weight: 650; }
+  header .grp { display: flex; gap: 5px; align-items: center; }
+  .clock { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 130px; }
+  .sep { width: 1px; align-self: stretch; background: var(--line); }
+
+  .layout { flex: 1; display: grid; grid-template-columns: 320px 1fr; min-height: 0; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px var(--gr) 10px var(--gl); }
+  main { overflow-y: auto; padding: 12px var(--gr) 12px var(--gl); min-width: 0; }
+  .only-narrow { display: none; }
+  /* phones and narrow windows: the page itself scrolls; jars & settings open as a panel above the content */
+  @media (max-width: 860px) {
+    html, body { height: auto; }
+    body { display: block; }
+    header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; }
+    body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--panel); }
+    .layout { display: block; }
+    aside { display: none; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+    body.aside-open aside { display: block; }
+    main { overflow: visible; }
+    .only-narrow { display: inline-block; }
+    header h1 { font-size: 14px; flex: 1 1 auto; }
+    header .steps { flex: 1 1 100%; overflow-x: auto; padding-bottom: 2px; }
+    .clock { min-width: 0; }
+    .sep { display: none; }
+    #view3d { height: 64vh; min-height: 340px; }
+    #jarCanvas { height: 340px; }
+    #heat { height: 360px; }
+    .tabs { overflow-x: auto; }
+    .tabs button { white-space: nowrap; }
+    .info3d { max-width: 62%; font-size: 11px; padding: 6px 8px; }
+    .bar3d .hint { display: none; }
+  }
+  @media (pointer: coarse) {
+    button { min-height: 36px; padding: 4px 12px; }
+    button.small { min-height: 32px; padding: 3px 10px; }
+    select, input[type=number] { min-height: 34px; }
+    input[type=range] { height: 30px; }
+    input[type=checkbox] { width: 20px; height: 20px; }
+  }
+
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+  aside h2:first-child { margin-top: 0; }
+
+  .jar-card { border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; margin-bottom: 6px; background: var(--panel2); cursor: pointer; }
+  .jar-card.focus { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+  .jar-card .row { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .jar-card .name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jar-card .meta { color: var(--muted); font-size: 12px; margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .jar-card .btns { display: flex; gap: 4px; margin-top: 5px; }
+  .chip { font-size: 11px; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; white-space: nowrap; }
+  .chip.good { color: var(--good); } .chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.bad { color: var(--bad); }
+
+  .param { margin: 6px 0; }
+  .param .top { display: flex; justify-content: space-between; gap: 6px; }
+  .param .val { font-variant-numeric: tabular-nums; color: var(--accent); }
+  .param input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+  .param .lock { color: var(--muted); font-size: 11px; }
+  .hint { color: var(--muted); font-size: 11.5px; }
+  .restart-note { background: rgba(232,184,74,.12); border: 1px solid var(--warn); border-radius: 6px; padding: 6px 8px; margin: 8px 0; font-size: 12px; }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 5px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+  .tabs button { border-radius: 6px 6px 0 0; }
+  .tabs button.on { background: var(--accent); color: #07110d; border-color: var(--accent); font-weight: 600; }
+
+  .top-row { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: 12px; margin-bottom: 12px; }
+  .top-row > * { min-width: 0; }
+  @media (max-width: 1000px) { .top-row { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  #jarCanvas { width: 100%; height: 400px; display: block; border-radius: 8px; background: var(--panel2); }
+  .alerts { margin-bottom: 8px; display: flex; flex-direction: column; gap: 5px; max-height: 250px; overflow-y: auto; }
+  .alert { border-left: 3px solid; padding: 4px 8px; border-radius: 3px; background: var(--panel2); font-size: 12.5px; }
+  .alert.bad { border-color: var(--bad); } .alert.warn { border-color: var(--warn); } .alert.good { border-color: var(--good); }
+  .alert b { display: block; }
+  .ptable { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 10px; align-items: center; margin-bottom: 10px; font-size: 12.5px; }
+  .ptable .sw { width: 10px; height: 10px; border-radius: 50%; }
+  .ptable .nm b { font-weight: 600; }
+  .ptable .nm .sub { color: var(--muted); font-size: 11.5px; }
+  .bars { display: flex; gap: 6px; align-items: center; margin-top: 2px; }
+  .bar { height: 5px; border-radius: 3px; background: var(--grid); flex: 1; position: relative; overflow: hidden; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; }
+  .plant-edit { border: 1px solid var(--line); border-radius: 8px; padding: 6px; margin: 6px 0; background: var(--panel2); }
+  .plant-edit .line { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+  .plant-edit select { max-width: 150px; }
+  .plant-edit input[type=number] { width: 56px; }
+  .log { max-height: 190px; overflow-y: auto; font-size: 12px; border-top: 1px solid var(--line); padding-top: 6px; }
+  .log div { padding: 2px 0; display: flex; gap: 8px; }
+  .log .d { color: var(--muted); min-width: 52px; font-variant-numeric: tabular-nums; }
+  .log .bad { color: var(--bad); } .log .warn { color: var(--warn); } .log .good { color: var(--good); } .log .info { color: var(--muted); }
+
+  .charts-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .pgroup { border-top: 1px solid var(--line); padding: 4px 0; }
+  .pgroup summary { cursor: pointer; font-weight: 600; color: var(--muted); padding: 3px 0; }
+  .phelp { color: var(--muted); font-size: 11px; line-height: 1.3; }
+  .chart-group-title { grid-column: 1 / -1; margin-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  [hidden] { display: none !important; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap: 10px; }
+  .chart-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 8px 4px; }
+  .chart-card .hd { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px; }
+  .chart-card .hd .t { font-weight: 600; }
+  .chart-card .hd .v { font-variant-numeric: tabular-nums; color: var(--accent); }
+  .chart-card canvas { width: 100%; height: 150px; display: block; }
+
+  .sweep-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 10px; margin-bottom: 10px; }
+  .sweep-form label { display: block; color: var(--muted); font-size: 11.5px; margin-bottom: 2px; }
+  .sweep-form .f { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  .sweep-form .f .line { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #heat { width: 100%; height: 440px; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: crosshair; }
+  .legend { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--muted); font-size: 12px; }
+  .legend .bar { height: 10px; width: 180px; border-radius: 5px; background: linear-gradient(90deg, rgb(220,60,70), rgb(220,210,70), rgb(70,180,90)); }
+  .tip { min-height: 38px; margin-top: 6px; }
+  #bkPanel { margin-top: 6px; }
+  #bkPanel textarea { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px; font: 11px/1.3 ui-monospace, Consolas, monospace; resize: vertical; }
+  .saveok { color: var(--good); } .savewarn { color: var(--warn); }
+  .bar3d { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-bottom: 8px; }
+  .bar3d label { display: flex; gap: 5px; align-items: center; }
+  #view3d { position: relative; height: min(74vh, 780px); min-height: 380px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #0d1117; }
+  #view3d canvas { display: block; touch-action: none; }
+  .info3d { position: absolute; left: 10px; top: 10px; max-width: 320px; background: rgba(10,14,20,.72); color: #e4e9f0; border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.45; pointer-events: none; }
+  .info3d b { font-size: 13px; }
+  .info3d .bad { color: #ff8a78; } .info3d .warn { color: #f1c24f; } .info3d .good { color: #7bd592; }
+  .msg3d { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 30px; color: #e4e9f0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🫙 Closed Jar Simulator</h1>
+  <button id="menuBtn" class="only-narrow" title="Jars, actions and settings">☰ Jars &amp; settings</button>
+  <div class="grp">
+    <button id="playBtn" class="primary" style="min-width:74px">▶ Play</button>
+    <label class="hint">Speed</label>
+    <select id="speed"></select>
+  </div>
+  <div class="grp steps">
+    <button data-step="0.25" title="Advance 6 hours">+6 h</button>
+    <button data-step="1">+1 d</button>
+    <button data-step="7">+1 wk</button>
+    <button data-step="30">+1 mo</button>
+    <button data-step="365">+1 yr</button>
+  </div>
+  <div class="sep"></div>
+  <div class="clock" id="clock"></div>
+  <div class="grp" style="margin-left:auto">
+    <button id="restartAll" title="Restart every jar from day 0 with its starting values">⟲ Restart all</button>
+    <button id="themeBtn" title="Toggle light/dark">◐</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside>
+    <h2>Jars</h2>
+    <div id="jarList"></div>
+    <div class="grp" style="display:flex;gap:5px;margin-top:6px">
+      <select id="presetSel" style="flex:1"></select>
+      <button id="addJar">+ Add</button>
+    </div>
+    <div class="hint" id="presetNote" style="margin-top:4px"></div>
+
+    <h2>Saved data</h2>
+    <div class="hint" id="saveStatus">Your jars are saved automatically on this device.</div>
+    <div class="actions" style="margin-top:6px">
+      <button id="bkCopy" class="small" title="Copies all your jars as text, to paste into another browser or device">Copy backup</button>
+      <button id="bkPasteOpen" class="small" title="Paste a backup from another device">Paste backup…</button>
+      <button id="bkReset" class="small" title="Forget the saved jars and start with the three starter jars">Reset to starter jars</button>
+    </div>
+    <div id="bkPanel" hidden>
+      <textarea id="bkText" rows="4" spellcheck="false" placeholder="Paste a backup here (it starts with JARSIM)"></textarea>
+      <div class="actions">
+        <button id="bkReplace" class="small">Replace my jars</button>
+        <button id="bkAdd" class="small">Add these jars</button>
+        <button id="bkClose" class="small">Close</button>
+      </div>
+      <div class="hint" id="bkMsg"></div>
+    </div>
+
+    <h2>Do something to the focused jar</h2>
+    <div class="actions" id="actions"></div>
+
+    <h2 id="paramTitle">Settings</h2>
+    <div id="restartNote"></div>
+    <div id="params"></div>
+  </aside>
+
+  <main>
+    <div class="tabs">
+      <button data-tab="live" class="on">Live</button>
+      <button data-tab="3d">3D view</button>
+      <button data-tab="sweep">Sweep</button>
+    </div>
+
+    <div id="tab-live">
+      <div class="top-row">
+        <div class="card">
+          <canvas id="jarCanvas"></canvas>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <b id="focusName"></b><span id="focusStatus"></span>
+          </div>
+          <div class="alerts" id="alerts"></div>
+          <div class="hint" style="margin-bottom:4px">Plants</div>
+          <div id="plantTable"></div>
+          <div class="hint" style="margin-bottom:4px">Event log (newest first)</div>
+          <div class="log" id="log"></div>
+        </div>
+      </div>
+      <div class="charts-bar">
+        <b>Charts</b>
+        <span class="hint">Jars ticked in the list are overlaid. Hover a chart for exact values.</span>
+        <label class="hint" style="margin-left:auto">Show</label>
+        <select id="chartGroup"></select>
+        <label class="hint">Window</label>
+        <select id="window">
+          <option value="3">Last 3 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="365">Last year</option>
+          <option value="0" selected>Everything</option>
+        </select>
+      </div>
+      <div class="charts" id="charts"></div>
+    </div>
+
+    <div id="tab-3d" hidden>
+      <div class="bar3d">
+        <label><input type="checkbox" id="o3Cut" checked> Cutaway (see inside the soil)</label>
+        <label><input type="checkbox" id="o3Roots" checked> Roots</label>
+        <label><input type="checkbox" id="o3Fauna" checked> Soil animals</label>
+        <label><input type="checkbox" id="o3Spin"> Auto-rotate</label>
+        <button id="o3Reset" class="small">Reset view</button>
+        <span class="hint">Drag to rotate, wheel to zoom, double-click to reset. Plants, roots and water are drawn from the live simulation.</span>
+      </div>
+      <div id="view3d"><div id="info3d" class="info3d"></div><div id="msg3d" class="msg3d" hidden></div></div>
+    </div>
+
+    <div id="tab-sweep" hidden>
+      <p class="hint" style="margin-top:0">Runs many jars with no display and shows which combinations survive. Pick two settings to vary; everything else comes from the focused jar's starting setup. Click a cell to open it as a new jar.</p>
+      <div class="sweep-form" id="sweepForm"></div>
+      <div class="legend">
+        <button id="sweepRun" class="primary">Run sweep</button>
+        <span id="sweepProg"></span>
+        <span style="margin-left:auto">fails early</span><span class="bar"></span><span>survives the whole run</span>
+      </div>
+      <canvas id="heat"></canvas>
+      <div class="tip hint" id="heatTip">Hover a cell for details.</div>
+    </div>
+  </main>
+</div>
+
+<script src="src/species.js"></script>
+<script src="src/model.js"></script>
+<script src="src/diagnostics.js"></script>
+<script src="src/presets.js"></script>
+<script src="src/store.js"></script>
+<script src="src/sweep.js"></script>
+<script src="src/charts.js"></script>
+<script src="src/jarview.js"></script>
+<script src="libs/three.r128.min.js"></script>
+<script>window.THREE || document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>');</script>
+<script src="src/jar3d.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>
